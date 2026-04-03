@@ -949,19 +949,36 @@
                 width: 100%;
             }
         }
-        /* ============== v2: Away / Meal Buttons ============== */
-        .btn-away, .btn-meal {
+        /* ============== v2: Interrupt Button ============== */
+        .btn-away {
             background: #444;
             color: #fff;
             border: none;
-            padding: 25px 50px;
+            padding: 25px 70px;
             font-size: 40px;
             font-weight: bold;
             border-radius: 16px;
             cursor: pointer;
             transition: 0.2s;
         }
-        .btn-away:hover, .btn-meal:hover { background: #666; }
+        .btn-away:hover { background: #666; }
+
+        /* ============== v2: Accumulated Time Display ============== */
+        #focus-accumulated-display {
+            font-size: 28px;
+            color: #888;
+            margin-top: 18px;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 1px;
+        }
+        #focus-accumulated-display .acc-label {
+            color: #666;
+            font-size: 22px;
+            margin-right: 8px;
+        }
+        #focus-accumulated-display .acc-value {
+            color: #4fc3f7;
+        }
 
         /* ============== v2: Normal Section ============== */
         #normal-section {
@@ -1048,7 +1065,9 @@
             .btn-resume-main { font-size: 36px; padding: 25px 30px; }
             .btn-task-recovery { font-size: 22px; padding: 15px 20px; }
             .btn-roulette-recovery { font-size: 24px; padding: 15px; }
-            .btn-away, .btn-meal { padding: 18px 30px; font-size: 24px; }
+            .btn-away { padding: 18px 30px; font-size: 24px; }
+            #focus-accumulated-display { font-size: 22px; }
+            #focus-accumulated-display .acc-label { font-size: 17px; }
         }
     </style>
 </head>
@@ -1094,9 +1113,11 @@
     <div id="focus-screen" class="screen">
         <div id="focus-task-display">タスク名</div>
         <div id="focus-timer-display">00:00</div>
+        <div id="focus-accumulated-display">
+            <span class="acc-label">今日の累積集中</span><span class="acc-value" id="acc-value-display">—</span>
+        </div>
         <div class="focus-buttons">
-            <button class="btn-away" id="btn-away" onclick="pauseAs('away')">離席</button>
-            <button class="btn-meal" id="btn-meal" onclick="pauseAs('meal')">食事</button>
+            <button class="btn-away" id="btn-away" onclick="pauseAs('away')">中断</button>
             <button class="btn-finish" id="btn-finish-focus" onclick="finishFocus()">■ 終了</button>
         </div>
     </div>
@@ -1389,9 +1410,15 @@
             const elapsed = Math.floor((now - focusSegmentStartedAt) / 1000);
             document.getElementById('focus-timer-display').innerText = formatElapsedTime(elapsed);
             if (settings.milestoneEnabled) { handleFocusMilestone(elapsed); }
+            // 累積集中時間を更新
+            const todayLogs = getTodayLogs();
+            const savedSeconds = getTotalFocusTime(todayLogs);
+            const totalWithCurrent = savedSeconds + elapsed;
+            const accEl = document.getElementById('acc-value-display');
+            if (accEl) accEl.innerText = formatDuration(totalWithCurrent);
         }
 
-        // ================= pauseAs (v2: 離席 / 食事) =================
+        // ================= pauseAs (v2: 中断) =================
         function pauseAs(type) {
             const endedAt = Date.now();
             const seconds = Math.round((endedAt - focusSegmentStartedAt) / 1000);
@@ -1618,6 +1645,19 @@
             return h >= 4 && h < 12; // 4:00～11:59
         }
 
+        // ================= Task Time Ranking =================
+        function getTaskTotalTimes(todayLogs) {
+            const map = {};
+            for (const log of todayLogs) {
+                const name = log.taskName || '名称未設定タスク';
+                map[name] = (map[name] || 0) + log.seconds;
+            }
+            // 時間の多い順にソート
+            return Object.entries(map)
+                .map(([task, seconds]) => ({ task, seconds }))
+                .sort((a, b) => b.seconds - a.seconds);
+        }
+
         // ================= Summary Rendering =================
         function showSummary() {
             const todayLogs = getTodayLogs();
@@ -1629,9 +1669,9 @@
                 const totalSeconds = getTotalFocusTime(todayLogs);
                 const longestSeconds = getLongestFocusSegment(todayLogs);
                 const startCount = getStartCount(todayLogs);
-                const bestSession = getBestSession(todayLogs);
                 const firstStartTime = getFirstStartTime(todayLogs);
                 const inMorning = didStartInMorning(todayLogs);
+                const taskRanking = getTaskTotalTimes(todayLogs);
 
                 let html = '';
 
@@ -1661,14 +1701,19 @@
                 html += '</div>';
                 html += '</div>';
 
-                // ベストセッション（自己記録）
-                if (bestSession) {
+                // タスク別累積集中時間
+                if (taskRanking.length > 0) {
                     html += '<div class="summary-section">';
-                    html += '<div class="summary-section-title">今日のベストセッション</div>';
-                    html += '<div class="best-session-display">';
-                    html += '<span class="task-name">' + escapeHtml(bestSession.task) + '</span> ';
-                    html += formatDuration(bestSession.seconds);
-                    html += '</div>';
+                    html += '<div class="summary-section-title">タスク別 累積集中時間</div>';
+                    taskRanking.forEach((item, idx) => {
+                        const medals = ['🥇', '🥈', '🥉'];
+                        const position = idx < 3 ? medals[idx] : (idx + 1) + '.';
+                        html += '<div class="ranking-row">';
+                        html += '<span class="ranking-position">' + position + '</span>';
+                        html += '<span class="ranking-task">' + escapeHtml(item.task) + '</span>';
+                        html += '<span class="ranking-time">' + formatDuration(item.seconds) + '</span>';
+                        html += '</div>';
+                    });
                     html += '</div>';
                 }
 
