@@ -964,19 +964,19 @@
         .btn-away:hover { background: #666; }
 
         /* ============== v2: Accumulated Time Display ============== */
-        #focus-accumulated-display {
+        #focus-accumulated-display, #main-accumulated-display {
             font-size: 28px;
             color: #888;
             margin-top: 18px;
             font-variant-numeric: tabular-nums;
             letter-spacing: 1px;
         }
-        #focus-accumulated-display .acc-label {
+        #focus-accumulated-display .acc-label, #main-accumulated-display .acc-label {
             color: #666;
             font-size: 22px;
             margin-right: 8px;
         }
-        #focus-accumulated-display .acc-value {
+        #focus-accumulated-display .acc-value, #main-accumulated-display .acc-value {
             color: #4fc3f7;
         }
 
@@ -989,6 +989,36 @@
         }
 
         /* ============== v2: Recovery Mode ============== */
+        #recovery-header {
+            display: flex;
+            gap: 40px;
+            justify-content: center;
+            align-items: baseline;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        .rh-label {
+            font-size: 20px;
+            color: #666;
+            margin-right: 12px;
+        }
+        .rh-value {
+            font-size: 44px;
+            font-variant-numeric: tabular-nums;
+            color: #888;
+        }
+        .rh-value.acc {
+            color: #4fc3f7;
+        }
+        #pause-elapsed-value.over5 {
+            color: #ff5252;
+            animation: pulse5min 1s ease-in-out infinite alternate;
+        }
+        @keyframes pulse5min {
+            from { opacity: 1; }
+            to { opacity: 0.4; }
+        }
+
         #recovery-section {
             width: 100%;
             max-width: 900px;
@@ -1066,8 +1096,8 @@
             .btn-task-recovery { font-size: 22px; padding: 15px 20px; }
             .btn-roulette-recovery { font-size: 24px; padding: 15px; }
             .btn-away { padding: 18px 30px; font-size: 24px; }
-            #focus-accumulated-display { font-size: 22px; }
-            #focus-accumulated-display .acc-label { font-size: 17px; }
+            #focus-accumulated-display, #main-accumulated-display { font-size: 22px; }
+            #focus-accumulated-display .acc-label, #main-accumulated-display .acc-label { font-size: 17px; }
         }
     </style>
 </head>
@@ -1099,9 +1129,22 @@
                 <button class="btn-secondary" id="btn-show-settings" onclick="showSettings()">⚙️ 設定</button>
             </div>
             <button class="btn-roulette" id="btn-roulette">決められない時（開始）</button>
+            <div id="main-accumulated-display">
+                <span class="acc-label">今日の累積集中</span><span class="acc-value" id="main-acc-value-display">—</span>
+            </div>
         </div>
         <!-- 復帰モード -->
         <div id="recovery-section" style="display:none">
+            <div id="recovery-header">
+                <div id="recovery-pause-elapsed">
+                    <span class="rh-label">中断中</span>
+                    <span class="rh-value" id="pause-elapsed-value">00:00</span>
+                </div>
+                <div id="recovery-today-acc">
+                    <span class="rh-label">今日の集中</span>
+                    <span class="rh-value acc" id="recovery-acc-value">—</span>
+                </div>
+            </div>
             <div id="recovery-resume-area"></div>
             <div id="recovery-tasks-area"></div>
             <button class="btn-roulette-recovery" id="recovery-roulette-btn">ランダム</button>
@@ -1185,6 +1228,7 @@
         let lastTaskName = '';
         let lastPauseType = ''; // 'away' | 'meal'
         let pausedAt = null;
+        let pauseIntervalId = null;
 
         // 設定
         let settings = {
@@ -1456,6 +1500,10 @@
                 normalSection.style.display = '';
                 recoverySection.style.display = 'none';
                 renderTaskSlots();
+                const todayLogs = getTodayLogs();
+                const accSec = getTotalFocusTime(todayLogs);
+                const accEl = document.getElementById('main-acc-value-display');
+                if (accEl) accEl.innerText = accSec > 0 ? formatDuration(accSec) : '—';
             }
         }
 
@@ -1484,6 +1532,43 @@
             // ランダムボタン
             const rouletteBtn = document.getElementById('recovery-roulette-btn');
             rouletteBtn.onclick = () => { initAudio(); startRoulette(); };
+
+            // 今日の累積集中時間と中断タイマー
+            const todayLogs = getTodayLogs();
+            const accSec = getTotalFocusTime(todayLogs);
+            document.getElementById('recovery-acc-value').innerText = accSec > 0 ? formatDuration(accSec) : '—';
+            startPauseTimer();
+        }
+
+        function startPauseTimer() {
+            stopPauseTimer();
+            tickPauseTimer();
+            pauseIntervalId = setInterval(tickPauseTimer, 1000);
+        }
+
+        function tickPauseTimer() {
+            if (!pausedAt) return;
+            const elapsed = Math.floor((Date.now() - pausedAt) / 1000);
+            const el = document.getElementById('pause-elapsed-value');
+            if (!el) return;
+            el.innerText = formatElapsedTime(elapsed);
+
+            // 5分（300秒）ちょうどで1回フラッシュ、以降は文字が赤く点滅
+            if (elapsed >= 300) {
+                if (!el.classList.contains('over5')) {
+                    el.classList.add('over5');
+                    flashScreen();
+                }
+            } else {
+                el.classList.remove('over5');
+            }
+        }
+
+        function stopPauseTimer() {
+            if (pauseIntervalId) {
+                clearInterval(pauseIntervalId);
+                pauseIntervalId = null;
+            }
         }
 
         function exitRecovery() {
@@ -1914,6 +1999,7 @@
                 clearInterval(focusIntervalId);
                 focusIntervalId = null;
             }
+            stopPauseTimer();
         }
 
         // ================= Start =================
